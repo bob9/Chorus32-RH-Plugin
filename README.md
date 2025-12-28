@@ -7,10 +7,11 @@ A RotorHazard plugin that provides full integration with Chorus32 lap timing har
 - **Multiple Device Support**: Connect multiple Chorus32 devices (up to 8 devices = 48 nodes total)
 - **6 Nodes Per Device**: Each Chorus32 supports 6 receiver nodes
 - **TCP and Serial Connections**: Support for both network (WiFi/Ethernet) and USB serial connections
+- **RotorHazard-Side Lap Detection**: Chorus32 pushes RSSI values continuously, RotorHazard detects threshold crossings
 - **RSSI Monitoring**: Real-time RSSI tracking with configurable push intervals (10ms default)
-- **Marshalling Support**: Peak RSSI values captured per lap for marshalling decisions
+- **Full RSSI History**: Complete RSSI data available for advanced marshalling and analysis
 - **Per-Node Control**: Enable/disable individual receiver nodes
-- **Race State Control**: Start/stop races from RotorHazard
+- **Threshold-Based Detection**: Configurable RSSI threshold per node
 - **Configuration Persistence**: All settings saved across restarts
 - **Simple ASCII Protocol**: Easy to debug with human-readable messages
 
@@ -112,17 +113,26 @@ Use these to configure all devices/nodes at once:
 - **Set All Thresholds**: Apply same threshold to all 6 nodes on all devices
 - **Set All Min Lap Times**: Apply same minimum lap time to all devices
 
-## RSSI Monitoring for Marshalling
+## RSSI-Based Lap Detection
 
-The plugin automatically captures RSSI (signal strength) data for marshalling:
+This plugin uses RotorHazard-side lap detection from RSSI values:
 
 ### How It Works
 
-1. Plugin enables automatic RSSI push from Chorus32 (configurable interval)
-2. Device sends RSSI updates continuously (e.g., every 10ms)
-3. Plugin tracks peak RSSI during each lap crossing
-4. Peak RSSI is saved with each lap in RotorHazard
-5. Marshals can review RSSI values to validate lap detections
+1. Chorus32 devices continuously push RSSI values at configurable intervals (default: 10ms)
+2. RotorHazard receives RSSI stream and monitors for threshold crossings
+3. When RSSI rises above threshold, a crossing is detected (entering gate)
+4. Peak RSSI is tracked during the entire crossing
+5. When RSSI falls below threshold, a lap is recorded (exiting gate)
+6. Peak RSSI is saved with each lap for marshalling and analysis
+7. Minimum lap time prevents false detections from signal bounce
+
+### Benefits
+
+- **Full RSSI History**: Every RSSI sample available for analysis and replay
+- **Advanced Marshalling**: Review complete signal patterns, not just peaks
+- **Flexible Thresholds**: Adjust detection sensitivity without device changes
+- **RotorHazard Features**: Access to all RotorHazard crossing detection algorithms
 
 ### Recommended Settings
 
@@ -140,25 +150,29 @@ At 100 mph through a 2-meter gate:
 
 ## Usage
 
-### Starting a Race
+### How Racing Works
 
-1. Configure pilots and heats in RotorHazard as normal
-2. Click **Stage Race** or **Start Race**
-3. Plugin automatically tells Chorus32 to start detecting laps
-4. Laps appear in real-time in RotorHazard UI
+1. **Connect Devices**: Configure and connect Chorus32 devices in plugin settings
+2. **Continuous RSSI**: Chorus32 continuously pushes RSSI values (default: every 10ms)
+3. **Configure Race**: Set up pilots and heats in RotorHazard as normal
+4. **Start Race**: Click **Stage Race** or **Start Race** in RotorHazard
+5. **Automatic Detection**: RotorHazard detects laps from RSSI threshold crossings
+6. **Real-Time Laps**: Laps appear immediately in RotorHazard UI
+7. **Stop Race**: Click **Stop Race** - results saved to database
 
-### Stopping a Race
+### Important Notes
 
-1. Click **Stop Race** in RotorHazard
-2. Plugin tells Chorus32 to stop lap detection
-3. Results are saved in RotorHazard database
+- **No Chorus32 Race Mode**: Chorus32 just pushes RSSI continuously, RotorHazard handles all lap detection
+- **Threshold Configuration**: Set thresholds in plugin settings (typical: 800-1200)
+- **Minimum Lap Time**: Prevents false triggers from signal bounce (default: 1 second)
 
 ### Viewing RSSI Data
 
-Lap records in RotorHazard include `peak_rssi` values:
-- Available in lap data exports
-- Used by RotorHazard's marshalling features
-- Helps validate lap detection quality
+All lap records include complete RSSI data:
+- **Peak RSSI**: Maximum signal strength during crossing
+- **Full History**: Complete RSSI timeline for analysis
+- **Marshalling**: Use RotorHazard's marshalling features to review signal patterns
+- **Export**: Available in lap data exports for external analysis
 
 ## Troubleshooting
 
@@ -227,21 +241,21 @@ Request:  R{node}{command}{data}\n
 Response: S{node}{command}{data}\n
 ```
 
-### Key Commands
+### Key Commands Used by Plugin
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `N` | Number of receivers | `N0` → `N6` |
-| `B` | Band selection | `R0B0` (node 0, Raceband) |
-| `C` | Channel | `R0C0` (node 0, channel 1) |
-| `T` | Threshold | `R0T03E8` (node 0, 1000) |
-| `M` | Min lap time | `R*M05` (all nodes, 5 sec) |
-| `R` | Race mode | `R*R2` (all nodes, start) |
-| `A` | Active/inactive | `R0A1` (node 0, active) |
-| `I` | RSSI interval | `R0I000A` (node 0, 10ms) |
-| `L` | Lap detected | `S0L0100000064` (response) |
-| `r` | RSSI value | `S0r0ABC` (response) |
-| `t` | Time | `R0t` (request time) |
+| Command | Description | Example | Used By Plugin |
+|---------|-------------|---------|----------------|
+| `N` | Number of receivers | `N0` → `N6` | ✓ (on connect) |
+| `B` | Band selection | `R0B0` (node 0, Raceband) | ✓ |
+| `C` | Channel | `R0C0` (node 0, channel 1) | ✓ |
+| `T` | Threshold | `R0T03E8` (node 0, 1000) | ✓ |
+| `M` | Min lap time | `R*M05` (all nodes, 5 sec) | ✓ |
+| `R` | Race mode | `R*R2` (all nodes, start) | ✗ (not used - RH detects laps) |
+| `A` | Active/inactive | `R0A1` (node 0, active) | ✓ |
+| `I` | RSSI interval | `R0I000A` (node 0, 10ms) | ✓ (enables RSSI push) |
+| `L` | Lap detected | `S0L0100000064` (response) | ✗ (ignored - RH detects from RSSI) |
+| `r` | RSSI value | `S0r0ABC` (response) | ✓ (used for lap detection) |
+| `t` | Time | `R0t` (request time) | ✓ (time sync) |
 
 ### Wildcard Commands
 
@@ -264,6 +278,8 @@ R*M05\n   # Set min lap 5 seconds on all nodes
 | Feature | LapRF | Chorus32 |
 |---------|-------|----------|
 | Receivers per device | 8 | 6 |
+| Lap detection | Device-side | RotorHazard-side (from RSSI) |
+| Full RSSI history | ✗ | ✓ |
 | Gain control | ✓ | ✗ |
 | Threshold | ✓ | ✓ |
 | Min lap time | ✓ | ✓ |
@@ -271,7 +287,7 @@ R*M05\n   # Set min lap 5 seconds on all nodes
 | Time precision | Microsecond | Millisecond |
 | Protocol | Binary | ASCII |
 | Per-node enable | ✗ | ✓ |
-| Marshalling support | ✓ | ✓ |
+| Marshalling support | ✓ | ✓ (enhanced with full RSSI) |
 | Price | $$$ | $ |
 
 ## Development

@@ -69,11 +69,18 @@ class Chorus32Node(Node):
         self.local_index = local_index  # 0-5
         self.device = device
         self.is_configured = False
-        self.threshold = 0
+        self.threshold = 800  # Default threshold
         self.band_idx = None
         self.channel_idx = None
         self.is_active = True  # Chorus32-specific: per-node enable/disable
-        self.pass_peak_rssi = 0  # Track peak RSSI for current lap
+
+        # Crossing detection state
+        self.crossing_flag = False  # Currently in a crossing
+        self.pass_peak_rssi = 0  # Peak RSSI for current crossing
+        self.pass_nadir_rssi = 9999  # Nadir RSSI for current crossing
+        self.last_crossing_time = 0  # Time of last crossing
+        self.enter_at_timestamp = 0
+        self.exit_at_timestamp = 0
 
 
 class Chorus32Device:
@@ -369,38 +376,68 @@ class Chorus32Interface(BaseHardwareInterface):
         cmd = message.command
 
         if cmd == chorus32.Chorus32Commands.RESPONSE_LAPTIME:  # 'L' - Lap detection
-            lap_num, lap_time_ms = chorus32.Chorus32Decoder.decode_lap_message(message.data)
-            if lap_num is not None and lap_time_ms is not None:
-                node = device.nodes[message.node]
-                # Convert device time to server timestamp
-                server_timestamp = device.server_timestamp_from_device(lap_time_ms)
-
-                # Record the lap with peak RSSI for marshalling
-                if callable(self.pass_record_callback):
-                    self.pass_record_callback(
-                        node,
-                        server_timestamp,
-                        BaseHardwareInterface.LAP_SOURCE_REALTIME,
-                        peak=node.pass_peak_rssi
-                    )
-
-                # Reset peak RSSI for next lap
-                node.pass_peak_rssi = 0
-                logger.info(f"Lap detected: Node {message.node}, Lap {lap_num}, Time {lap_time_ms}ms")
+            # Ignore Chorus32's lap detection - we do our own from RSSI
+            pass
 
         elif cmd == chorus32.Chorus32Commands.GET_RSSI:  # 'r' - RSSI value
             rssi = chorus32.Chorus32Decoder.decode_hex_value(message.data, 4)
             if rssi is not None and message.node is not None:
                 node = device.nodes[message.node]
+                old_rssi = node.current_rssi
                 node.current_rssi = rssi
 
-                # Track peak RSSI for lap detection
-                if rssi > node.pass_peak_rssi:
-                    node.pass_peak_rssi = rssi
+                # Track overall peak/nadir for session
                 if rssi > node.node_peak_rssi:
                     node.node_peak_rssi = rssi
                 if rssi < node.node_nadir_rssi:
                     node.node_nadir_rssi = rssi
+
+                # Crossing detection based on threshold
+                threshold = node.threshold if node.threshold > 0 else 800
+                current_time = time.monotonic()
+
+                # Detect crossing state changes
+                was_crossing = node.crossing_flag
+                is_crossing = rssi >= threshold
+
+                if is_crossing != was_crossing:
+                    if is_crossing:
+                        # Entering crossing
+                        node.crossing_flag = True
+                        node.pass_peak_rssi = rssi
+                        node.pass_nadir_rssi = rssi
+                        node.enter_at_timestamp = current_time
+                        logger.debug(f"Node {message.node} entering crossing, RSSI={rssi}, threshold={threshold}")
+                    else:
+                        # Exiting crossing - trigger lap
+                        node.crossing_flag = False
+                        node.exit_at_timestamp = current_time
+
+                        # Check minimum lap time (default 1 second)
+                        min_lap_time = (device.min_lap_time / 1000.0) if device.min_lap_time else 1.0
+                        time_since_last = current_time - node.last_crossing_time
+
+                        if node.last_crossing_time == 0 or time_since_last >= min_lap_time:
+                            # Record the lap with peak RSSI for marshalling
+                            if callable(self.pass_record_callback):
+                                self.pass_record_callback(
+                                    node,
+                                    current_time,
+                                    BaseHardwareInterface.LAP_SOURCE_REALTIME,
+                                    peak=node.pass_peak_rssi
+                                )
+                                node.last_crossing_time = current_time
+                                logger.info(f"Lap detected: Node {message.node}, Peak RSSI={node.pass_peak_rssi}, Time since last={time_since_last:.2f}s")
+
+                        # Reset peak/nadir for next crossing
+                        node.pass_peak_rssi = 0
+                        node.pass_nadir_rssi = 9999
+                elif is_crossing:
+                    # Currently in crossing - track peak/nadir
+                    if rssi > node.pass_peak_rssi:
+                        node.pass_peak_rssi = rssi
+                    if rssi < node.pass_nadir_rssi:
+                        node.pass_nadir_rssi = rssi
 
         elif cmd == chorus32.Chorus32Commands.THRESHOLD:  # 'T' - Threshold
             threshold = chorus32.Chorus32Decoder.decode_hex_value(message.data, 4)
@@ -555,16 +592,11 @@ class Chorus32Interface(BaseHardwareInterface):
         Args:
             state: Race state (START_RACE or other)
         """
-        # Map to Chorus32 race mode
-        if state == 1:  # Racing
-            race_mode = chorus32.Chorus32RaceModes.ABSOLUTE_TIMING  # Mode 2
-        else:
-            race_mode = chorus32.Chorus32RaceModes.OFF  # Mode 0
-
-        for device in self.devices:
-            if device.connected:
-                # Use wildcard to set all nodes
-                device.write(chorus32.Chorus32Encoder.encode_set_race_mode('*', race_mode))
+        # Don't send race mode commands to Chorus32
+        # We detect laps on RotorHazard side from RSSI values
+        # Chorus32 just continuously pushes RSSI data
+        # This gives us full RSSI history for marshalling
+        pass
 
     # Stub methods required by BaseHardwareInterface
     def set_enter_at_level(self, node_index, level):
@@ -628,7 +660,9 @@ class Chorus32Provider:
 
     def process_config(self):
         """Load configuration from persistent storage"""
-        device_count = self._rhapi.config.get_item_int('Chorus32', 'device_count', 1)
+        device_count = self._rhapi.config.get('Chorus32', 'device_count', as_int=True)
+        if device_count is None:
+            device_count = 1
         self.startup_device_total = device_count
 
         addresses = self.load_addresses()
