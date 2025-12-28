@@ -115,6 +115,73 @@ For each receiver node:
 
 **Minimum lap time** is also a global RotorHazard setting, not per-device
 
+### Frequency Configuration (Automatic)
+
+**Node frequencies are automatically configured by RotorHazard** when you assign pilots to heats - no manual frequency setup needed!
+
+#### How It Works
+
+1. **Configure Pilot VTX Frequencies** in RotorHazard
+   - Go to **Settings → Pilots**
+   - Set each pilot's VTX band and channel (e.g., "R1" for Raceband Channel 1)
+   - This is a one-time setup per pilot
+
+2. **Assign Pilots to Heat Slots**
+   - When creating a heat, assign pilots to slots (1-6 for single device, 1-12 for two devices, etc.)
+   - RotorHazard knows which pilot is in which slot
+
+3. **Automatic Node Configuration**
+   - RotorHazard automatically maps: Heat Slot → Node → Chorus32 Device & Receiver
+   - Plugin sends frequency commands to the correct Chorus32 receiver
+   - Each receiver tunes to match its assigned pilot's VTX
+
+#### Example: 12-Pilot Race with 2 Chorus32 Devices
+
+```
+Heat 1 Assignments:
+  Slot 1: Alice (R1 - 5658 MHz) → Device 0, Node 0 → Chorus32 auto-tunes to R1
+  Slot 2: Bob   (R3 - 5732 MHz) → Device 0, Node 1 → Chorus32 auto-tunes to R3
+  Slot 3: Carol (F2 - 5760 MHz) → Device 0, Node 2 → Chorus32 auto-tunes to F2
+  ...
+  Slot 7: Greg  (R5 - 5806 MHz) → Device 1, Node 0 → Chorus32 auto-tunes to R5
+  ...
+```
+
+#### Behind the Scenes
+
+When you assign a pilot to a heat slot, RotorHazard:
+
+1. Looks up pilot's VTX frequency from pilot database
+2. Calculates which Chorus32 device and receiver (0-5) handles that slot
+3. Calls plugin's `set_frequency()` method
+4. Plugin converts band letter to Chorus32 band index:
+   - 'R' → Raceband (0)
+   - 'A' → Band A (1)
+   - 'B' → Band B (2)
+   - 'E' → Band E (3)
+   - 'F' → Band F (4)
+   - 'D' → Band D (5)
+5. Plugin sends ASCII commands to Chorus32:
+   - `R0B0\n` - Set node 0 to Raceband
+   - `R0C0\n` - Set node 0 to channel 1
+
+#### Supported Bands
+
+- **Raceband** (R): 5658-5917 MHz (8 channels)
+- **Band A**: 5865-5905 MHz (8 channels)
+- **Band B**: 5733-5866 MHz (8 channels)
+- **Band E**: 5705-5945 MHz (8 channels)
+- **Band F**: 5740-5880 MHz (8 channels)
+- **Band D**: 5362-5399 MHz (8 channels - Lowband)
+
+#### Important Notes
+
+- **No Manual Tuning**: You never manually set frequencies in the plugin - RotorHazard handles it all
+- **Heat Changes**: Frequencies reconfigure automatically when you change heat assignments
+- **Mix and Match**: Each pilot can be on any band/channel - no restrictions
+- **Verification**: Check RotorHazard logs to confirm frequency commands were sent
+- **Node Active**: Make sure nodes are marked "Active" in plugin settings to receive frequencies
+
 ## RSSI-Based Lap Detection
 
 This plugin uses RotorHazard-side lap detection from RSSI values:
@@ -154,20 +221,33 @@ At 100 mph through a 2-meter gate:
 
 ### How Racing Works
 
-1. **Connect Devices**: Configure and connect Chorus32 devices in plugin settings
-2. **Continuous RSSI**: Chorus32 continuously pushes RSSI values (default: every 10ms)
-3. **Configure Race**: Set up pilots and heats in RotorHazard as normal
-4. **Start Race**: Click **Stage Race** or **Start Race** in RotorHazard
-5. **Automatic Detection**: RotorHazard detects laps from RSSI threshold crossings
-6. **Real-Time Laps**: Laps appear immediately in RotorHazard UI
-7. **Stop Race**: Click **Stop Race** - results saved to database
+1. **One-Time Setup**:
+   - Configure pilot VTX frequencies in **Settings → Pilots** (e.g., "R1", "F4", etc.)
+   - Connect Chorus32 devices in plugin settings
+   - Mark nodes as "Active" in plugin settings
+
+2. **Before Each Race**:
+   - Assign pilots to heat slots - **Frequencies auto-configure!**
+   - Calibrate thresholds using RotorHazard's Calibration feature (if needed)
+
+3. **During Race**:
+   - Chorus32 continuously pushes RSSI values (default: every 10ms)
+   - Click **Stage Race** or **Start Race** in RotorHazard
+   - RotorHazard detects laps from RSSI threshold crossings
+   - Laps appear immediately in RotorHazard UI with peak RSSI data
+
+4. **After Race**:
+   - Click **Stop Race** - results saved to database
+   - Review lap times and RSSI data in Marshalling
 
 ### Important Notes
 
+- **Automatic Frequency Setup**: Node frequencies configure automatically when you assign pilots to heats - no manual tuning!
 - **No Chorus32 Race Mode**: Chorus32 just pushes RSSI continuously, RotorHazard handles all lap detection
 - **Threshold Calibration**: Use RotorHazard's Calibration feature (not plugin settings)
 - **Per-Pilot Thresholds**: Each pilot can have different enter-at/exit-at levels
 - **Minimum Lap Time**: Global RotorHazard setting (Settings → Event & Classes)
+- **RSSI Interval**: Default 10ms is excellent for racing; use 5ms for maximum data capture
 
 ### Viewing RSSI Data
 
@@ -208,11 +288,13 @@ sudo usermod -a -G dialout $USER
 ### No Laps Detected
 
 1. **Check node is active**: Verify node Active checkbox is enabled in plugin settings
-2. **Calibrate thresholds**: Use RotorHazard's Calibration feature to set enter-at/exit-at levels
-3. **Check RSSI**: Verify RSSI updates are being received (check logs or RSSI graph)
-4. **Check race started**: Ensure race was started (not just staged)
-5. **Check frequency**: Verify node is on correct band/channel for the pilot's VTX
-6. **Check enter-at level**: Make sure enter-at level is lower than the pilot's signal strength
+2. **Check pilot VTX frequency configured**: Go to Settings → Pilots and verify each pilot has a band/channel set (e.g., "R1")
+3. **Check pilot assigned to heat**: Verify pilot is assigned to a heat slot (frequencies only auto-configure when assigned)
+4. **Calibrate thresholds**: Use RotorHazard's Calibration feature to set enter-at/exit-at levels
+5. **Check RSSI**: Verify RSSI updates are being received (check logs or RSSI graph)
+6. **Check race started**: Ensure race was started (not just staged)
+7. **Check frequency in logs**: Look for frequency command messages like "R0B0" in RotorHazard logs
+8. **Check enter-at level**: Make sure enter-at level is lower than the pilot's signal strength
 
 ### RSSI Not Updating
 
