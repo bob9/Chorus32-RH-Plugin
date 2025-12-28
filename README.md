@@ -188,17 +188,42 @@ sudo systemctl restart rotorhazard
 ./start.sh
 ```
 
-## Running RotorHazard Without Hardware (Testing/Development)
+## Getting Started: Installing RotorHazard on Your Computer
 
-You can run RotorHazard with the Chorus32 plugin installed even without physical Chorus32 devices. This is useful for:
-- Testing the plugin installation
-- Familiarizing yourself with the interface
-- Development and debugging
-- Demonstrating features
+**Important Architecture:** RotorHazard runs on **your computer** (Windows, Mac, or Linux), and Chorus32 devices act as **remote RSSI sensors** that connect to it via WiFi or USB.
+
+```
+┌─────────────────────────────────────┐
+│   Your Computer (Windows/Mac/Linux) │
+│                                     │
+│   RotorHazard Server (Python)      │ ←── Web browser connects here
+│   - Race management                 │     (http://localhost:5000)
+│   - Lap detection                   │
+│   - Database                        │
+│   - Web interface                   │
+└──────────────┬──────────────────────┘
+               │ WiFi or USB
+               ├──────────┬──────────┬──────────
+               ↓          ↓          ↓
+         ┌─────────┐ ┌─────────┐ ┌─────────┐
+         │Chorus32 │ │Chorus32 │ │Chorus32 │
+         │Device 1 │ │Device 2 │ │Device 3 │
+         │(6 nodes)│ │(6 nodes)│ │(6 nodes)│
+         └─────────┘ └─────────┘ └─────────┘
+           RSSI        RSSI        RSSI
+          sensors     sensors     sensors
+```
+
+### Why This Matters
+
+- **RotorHazard runs on your computer** - could be a laptop, desktop, or Raspberry Pi
+- **Chorus32 devices are separate hardware** - they sit at the race gate monitoring RSSI
+- **They communicate over WiFi or USB** - Chorus32 sends RSSI data to RotorHazard
+- **You access RotorHazard via web browser** - `http://localhost:5000` on the same computer
 
 ### Installing RotorHazard
 
-If you don't have RotorHazard installed yet, here's how to get started on each platform:
+Follow these steps to install RotorHazard on your computer:
 
 #### Linux (Recommended for Production)
 
@@ -314,9 +339,9 @@ cd RotorHazard\src\server
 python server.py
 ```
 
-### What Happens Without Hardware
+### Testing Without Chorus32 Hardware (Optional)
 
-When you run RotorHazard with the Chorus32 plugin but no devices connected:
+You can test the setup before buying or connecting Chorus32 hardware. When you run RotorHazard with the Chorus32 plugin installed but no Chorus32 devices connected:
 
 1. **Plugin Loads Successfully**
    - Check logs for: `Loaded bundled plugin 'interface_chorus32'`
@@ -360,15 +385,45 @@ Running http server at port 5000
 
 This is **completely normal** for testing without hardware. The server is fully functional for UI testing and configuration.
 
-### Connecting Real Hardware Later
+### Connecting Chorus32 Hardware
 
-When you're ready to connect actual Chorus32 devices:
+**This is the normal racing setup** - connecting your Chorus32 devices to RotorHazard running on your computer.
 
-1. Configure device addresses in Settings → Chorus32
-2. Click "Connect" button
-3. Watch logs for successful connection messages
-4. Nodes will start receiving RSSI data
-5. Calibrate thresholds using RotorHazard's Calibration feature
+#### Setup Steps:
+
+1. **Power on Chorus32 devices** - they will create WiFi networks or be ready for USB connection
+
+2. **Connect to Chorus32**:
+   - **WiFi**: Connect your computer to the Chorus32 WiFi network (default: `192.168.4.1`)
+   - **USB**: Connect Chorus32 via USB cable (shows as `/dev/ttyUSB0` on Linux or `COM3` on Windows)
+
+3. **Configure in RotorHazard**:
+   - Open `http://localhost:5000` in your web browser
+   - Go to **Settings → Chorus32**
+   - Set **Device Count** to the number of Chorus32 devices you have
+   - For each device, enter the **Device Address**:
+     - WiFi: `192.168.4.1` (or your Chorus32's IP address)
+     - USB: `/dev/ttyUSB0` (Linux) or `COM3` (Windows)
+   - Click **Connect** button
+
+4. **Verify Connection**:
+   - Watch the logs - you should see connection success messages
+   - No more "timed out" messages for connected devices
+   - RSSI data should start flowing
+
+5. **Configure Racing**:
+   - Set up pilots with VTX frequencies in **Settings → Pilots**
+   - Create heats and assign pilots
+   - Frequencies auto-configure on Chorus32 receivers!
+
+6. **Calibrate Thresholds**:
+   - Use RotorHazard's **Calibration** feature to set enter-at/exit-at levels
+   - Each pilot can have different threshold settings
+
+7. **Start Racing!**
+   - Stage or start a race
+   - RotorHazard detects laps from RSSI data sent by Chorus32
+   - View real-time results on the web interface
 
 ## Configuration
 
