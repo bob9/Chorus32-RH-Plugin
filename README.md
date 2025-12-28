@@ -188,6 +188,188 @@ sudo systemctl restart rotorhazard
 ./start.sh
 ```
 
+## Running RotorHazard Without Hardware (Testing/Development)
+
+You can run RotorHazard with the Chorus32 plugin installed even without physical Chorus32 devices. This is useful for:
+- Testing the plugin installation
+- Familiarizing yourself with the interface
+- Development and debugging
+- Demonstrating features
+
+### Installing RotorHazard
+
+If you don't have RotorHazard installed yet, here's how to get started on each platform:
+
+#### Linux (Recommended for Production)
+
+```bash
+# Install system dependencies
+sudo apt-get update
+sudo apt-get install python3 python3-pip python3-dev python3-venv git
+
+# Clone RotorHazard
+git clone https://github.com/RotorHazard/RotorHazard.git
+cd RotorHazard/src/server
+
+# Create virtual environment
+python3 -m venv ../../venv
+source ../../venv/bin/activate
+
+# Install Python dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Start RotorHazard
+python3 server.py
+```
+
+Access at: `http://localhost:5000`
+
+#### macOS
+
+```bash
+# Install Homebrew (if not already installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Python 3
+brew install python3 git
+
+# Clone RotorHazard
+git clone https://github.com/RotorHazard/RotorHazard.git
+cd RotorHazard/src/server
+
+# Create virtual environment
+python3 -m venv ../../venv
+source ../../venv/bin/activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Start RotorHazard
+python3 server.py
+```
+
+Access at: `http://localhost:5000`
+
+#### Windows
+
+```powershell
+# Install Python 3 from https://www.python.org/downloads/
+# During installation, check "Add Python to PATH"
+
+# Install Git from https://git-scm.com/download/win
+
+# Open Command Prompt or PowerShell
+
+# Clone RotorHazard
+git clone https://github.com/RotorHazard/RotorHazard.git
+cd RotorHazard\src\server
+
+# Create virtual environment
+python -m venv ..\..\venv
+..\..\venv\Scripts\activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Start RotorHazard
+python server.py
+```
+
+Access at: `http://localhost:5000`
+
+### Installing the Chorus32 Plugin
+
+Once RotorHazard is running, install the plugin:
+
+**Linux/macOS:**
+```bash
+# From the RotorHazard repository root
+mkdir -p ~/rh-data/plugins
+cp -r /path/to/chorus32-provider/custom_plugins/interface_chorus32 ~/rh-data/plugins/
+
+# Restart RotorHazard
+# Press Ctrl+C in the terminal running server.py
+# Then restart:
+cd RotorHazard/src/server
+source ../../venv/bin/activate
+python3 server.py
+```
+
+**Windows:**
+```powershell
+# Create plugins directory
+mkdir %USERPROFILE%\rh-data\plugins
+
+# Copy plugin (adjust path as needed)
+xcopy /E /I C:\path\to\chorus32-provider\custom_plugins\interface_chorus32 %USERPROFILE%\rh-data\plugins\interface_chorus32
+
+# Restart RotorHazard
+# Press Ctrl+C in the Command Prompt running server.py
+# Then restart:
+cd RotorHazard\src\server
+..\..\venv\Scripts\activate
+python server.py
+```
+
+### What Happens Without Hardware
+
+When you run RotorHazard with the Chorus32 plugin but no devices connected:
+
+1. **Plugin Loads Successfully**
+   - Check logs for: `Loaded bundled plugin 'interface_chorus32'`
+   - Plugin will show in Settings → Chorus32 panel
+
+2. **Nodes Are Created**
+   - Plugin creates virtual nodes based on device count setting
+   - Example: 3 devices = 18 nodes (3 × 6)
+   - Logs show: `Number of nodes found: 18`
+
+3. **Connection Timeouts Are Normal**
+   - You'll see: `Unable to connect to Chorus32 at Chorus32 1: timed out`
+   - This is expected and harmless - plugin is trying to connect to configured addresses
+   - The server continues running normally
+
+4. **You Can Still:**
+   - Explore the RotorHazard interface
+   - Configure pilots and heats
+   - Test frequency assignments (automatic configuration)
+   - Configure plugin settings (device count, RSSI interval, node active status)
+   - Run simulated races (though no laps will be detected without RSSI data)
+   - Test the UI and workflows
+
+5. **You Cannot:**
+   - Detect actual laps (no RSSI data without hardware)
+   - Calibrate thresholds (needs real RSSI values)
+   - See RSSI graphs (no data)
+
+### Example Log Output Without Hardware
+
+```
+RotorHazard v4.4.0-beta.2
+Loaded bundled plugin 'interface_chorus32'
+Number of nodes found: 18
+Unable to connect to Chorus32 at Chorus32 1: timed out
+Unable to connect to Chorus32 at Chorus32 2: timed out
+Unable to connect to Chorus32 at Chorus32 3: timed out
+Interface: Starting background thread
+Running http server at port 5000
+```
+
+This is **completely normal** for testing without hardware. The server is fully functional for UI testing and configuration.
+
+### Connecting Real Hardware Later
+
+When you're ready to connect actual Chorus32 devices:
+
+1. Configure device addresses in Settings → Chorus32
+2. Click "Connect" button
+3. Watch logs for successful connection messages
+4. Nodes will start receiving RSSI data
+5. Calibrate thresholds using RotorHazard's Calibration feature
+
 ## Configuration
 
 ### Basic Setup
