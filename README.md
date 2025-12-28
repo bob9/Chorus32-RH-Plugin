@@ -94,7 +94,6 @@ For each Chorus32 device, configure in the device detail panel:
 #### Per-Device Settings
 
 - **Device Address**: IP address or serial port
-- **Minimum Lap Time**: Minimum time between laps (seconds)
 - **RSSI Push Interval**: How often device sends RSSI updates (milliseconds)
   - Recommended: `10` (10ms = 100Hz)
   - Range: `5-50ms` for racing, `0` to disable
@@ -103,15 +102,18 @@ For each Chorus32 device, configure in the device detail panel:
 
 For each receiver node:
 
-- **Threshold**: Detection threshold (0-3000, typical: 800)
 - **Active**: Enable/disable this receiver
 
-### Combined Controls
+### Threshold Calibration
 
-Use these to configure all devices/nodes at once:
+**Thresholds are managed by RotorHazard's standard calibration system**, not by the plugin:
 
-- **Set All Thresholds**: Apply same threshold to all 6 nodes on all devices
-- **Set All Min Lap Times**: Apply same minimum lap time to all devices
+- Use RotorHazard's **Calibration** feature to set enter-at and exit-at levels per pilot
+- Calibration can be done manually or automatically
+- Each pilot can have different threshold settings
+- Supports advanced features like auto-calibration and dynamic thresholds
+
+**Minimum lap time** is also a global RotorHazard setting, not per-device
 
 ## RSSI-Based Lap Detection
 
@@ -163,8 +165,9 @@ At 100 mph through a 2-meter gate:
 ### Important Notes
 
 - **No Chorus32 Race Mode**: Chorus32 just pushes RSSI continuously, RotorHazard handles all lap detection
-- **Threshold Configuration**: Set thresholds in plugin settings (typical: 800-1200)
-- **Minimum Lap Time**: Prevents false triggers from signal bounce (default: 1 second)
+- **Threshold Calibration**: Use RotorHazard's Calibration feature (not plugin settings)
+- **Per-Pilot Thresholds**: Each pilot can have different enter-at/exit-at levels
+- **Minimum Lap Time**: Global RotorHazard setting (Settings → Event & Classes)
 
 ### Viewing RSSI Data
 
@@ -204,11 +207,12 @@ sudo usermod -a -G dialout $USER
 
 ### No Laps Detected
 
-1. **Check node is active**: Verify node Active checkbox is enabled
-2. **Check threshold**: Try lowering threshold (e.g., 500-800)
-3. **Check RSSI**: Verify RSSI updates are being received (check logs)
-4. **Check race mode**: Ensure race was started (not just staged)
-5. **Check frequency**: Verify node is on correct band/channel
+1. **Check node is active**: Verify node Active checkbox is enabled in plugin settings
+2. **Calibrate thresholds**: Use RotorHazard's Calibration feature to set enter-at/exit-at levels
+3. **Check RSSI**: Verify RSSI updates are being received (check logs or RSSI graph)
+4. **Check race started**: Ensure race was started (not just staged)
+5. **Check frequency**: Verify node is on correct band/channel for the pilot's VTX
+6. **Check enter-at level**: Make sure enter-at level is lower than the pilot's signal strength
 
 ### RSSI Not Updating
 
@@ -248,8 +252,8 @@ Response: S{node}{command}{data}\n
 | `N` | Number of receivers | `N0` → `N6` | ✓ (on connect) |
 | `B` | Band selection | `R0B0` (node 0, Raceband) | ✓ |
 | `C` | Channel | `R0C0` (node 0, channel 1) | ✓ |
-| `T` | Threshold | `R0T03E8` (node 0, 1000) | ✓ |
-| `M` | Min lap time | `R*M05` (all nodes, 5 sec) | ✓ |
+| `T` | Threshold | `R0T03E8` (node 0, 1000) | ✗ (RH calibration used) |
+| `M` | Min lap time | `R*M05` (all nodes, 5 sec) | ✗ (RH global setting) |
 | `R` | Race mode | `R*R2` (all nodes, start) | ✗ (not used - RH detects laps) |
 | `A` | Active/inactive | `R0A1` (node 0, active) | ✓ |
 | `I` | RSSI interval | `R0I000A` (node 0, 10ms) | ✓ (enables RSSI push) |

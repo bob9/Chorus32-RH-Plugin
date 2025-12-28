@@ -69,18 +69,9 @@ class Chorus32Node(Node):
         self.local_index = local_index  # 0-5
         self.device = device
         self.is_configured = False
-        self.threshold = 800  # Default threshold
         self.band_idx = None
         self.channel_idx = None
         self.is_active = True  # Chorus32-specific: per-node enable/disable
-
-        # Crossing detection state
-        self.crossing_flag = False  # Currently in a crossing
-        self.pass_peak_rssi = 0  # Peak RSSI for current crossing
-        self.pass_nadir_rssi = 9999  # Nadir RSSI for current crossing
-        self.last_crossing_time = 0  # Time of last crossing
-        self.enter_at_timestamp = 0
-        self.exit_at_timestamp = 0
 
 
 class Chorus32Device:
@@ -98,7 +89,6 @@ class Chorus32Device:
         self._last_time_sync = 0
 
         # Configuration
-        self.min_lap_time = None
         self.rssi_interval_ms = DEFAULT_RSSI_INTERVAL_MS
 
         # Create 6 nodes (not 8 like LapRF!)
@@ -392,13 +382,19 @@ class Chorus32Interface(BaseHardwareInterface):
                 if rssi < node.node_nadir_rssi:
                     node.node_nadir_rssi = rssi
 
-                # Crossing detection based on threshold
-                threshold = node.threshold if node.threshold > 0 else 800
+                # Crossing detection using RotorHazard's enter_at/exit_at levels
+                # Use enter_at_level to detect entering a crossing
+                # Use exit_at_level to detect exiting a crossing
                 current_time = time.monotonic()
-
-                # Detect crossing state changes
                 was_crossing = node.crossing_flag
-                is_crossing = rssi >= threshold
+
+                # Determine if currently in crossing based on enter/exit levels
+                if not was_crossing:
+                    # Not currently crossing - check if RSSI crosses enter_at_level
+                    is_crossing = rssi >= node.enter_at_level
+                else:
+                    # Currently crossing - check if RSSI drops below exit_at_level
+                    is_crossing = rssi >= node.exit_at_level
 
                 if is_crossing != was_crossing:
                     if is_crossing:
@@ -407,27 +403,22 @@ class Chorus32Interface(BaseHardwareInterface):
                         node.pass_peak_rssi = rssi
                         node.pass_nadir_rssi = rssi
                         node.enter_at_timestamp = current_time
-                        logger.debug(f"Node {message.node} entering crossing, RSSI={rssi}, threshold={threshold}")
+                        logger.debug(f"Node {message.node} entering crossing, RSSI={rssi}, enter_at={node.enter_at_level}")
                     else:
                         # Exiting crossing - trigger lap
+                        # RotorHazard handles minimum lap time globally
                         node.crossing_flag = False
                         node.exit_at_timestamp = current_time
 
-                        # Check minimum lap time (default 1 second)
-                        min_lap_time = (device.min_lap_time / 1000.0) if device.min_lap_time else 1.0
-                        time_since_last = current_time - node.last_crossing_time
-
-                        if node.last_crossing_time == 0 or time_since_last >= min_lap_time:
-                            # Record the lap with peak RSSI for marshalling
-                            if callable(self.pass_record_callback):
-                                self.pass_record_callback(
-                                    node,
-                                    current_time,
-                                    BaseHardwareInterface.LAP_SOURCE_REALTIME,
-                                    peak=node.pass_peak_rssi
-                                )
-                                node.last_crossing_time = current_time
-                                logger.info(f"Lap detected: Node {message.node}, Peak RSSI={node.pass_peak_rssi}, Time since last={time_since_last:.2f}s")
+                        # Record the lap with peak RSSI for marshalling
+                        if callable(self.pass_record_callback):
+                            self.pass_record_callback(
+                                node,
+                                current_time,
+                                BaseHardwareInterface.LAP_SOURCE_REALTIME,
+                                peak=node.pass_peak_rssi
+                            )
+                            logger.info(f"Lap detected: Node {message.node}, Peak RSSI={node.pass_peak_rssi}, exit_at={node.exit_at_level}")
 
                         # Reset peak/nadir for next crossing
                         node.pass_peak_rssi = 0
@@ -438,13 +429,6 @@ class Chorus32Interface(BaseHardwareInterface):
                         node.pass_peak_rssi = rssi
                     if rssi < node.pass_nadir_rssi:
                         node.pass_nadir_rssi = rssi
-
-        elif cmd == chorus32.Chorus32Commands.THRESHOLD:  # 'T' - Threshold
-            threshold = chorus32.Chorus32Decoder.decode_hex_value(message.data, 4)
-            if threshold is not None and message.node is not None:
-                node = device.nodes[message.node]
-                node.threshold = threshold
-                node.is_configured = True
 
         elif cmd == chorus32.Chorus32Commands.BAND:  # 'B' - Band
             band = chorus32.Chorus32Decoder.decode_hex_value(message.data, 1)
@@ -463,11 +447,6 @@ class Chorus32Interface(BaseHardwareInterface):
             if freq is not None and message.node is not None:
                 node = device.nodes[message.node]
                 node.frequency = freq
-
-        elif cmd == chorus32.Chorus32Commands.MIN_LAP_TIME:  # 'M' - Min lap time
-            min_lap = chorus32.Chorus32Decoder.decode_hex_value(message.data, 2)
-            if min_lap is not None:
-                device.min_lap_time = min_lap * 1000  # Convert seconds to ms
 
         elif cmd == chorus32.Chorus32Commands.GET_TIME:  # 't' - Time
             device_time = chorus32.Chorus32Decoder.decode_hex_value(message.data, 8)
@@ -516,31 +495,6 @@ class Chorus32Interface(BaseHardwareInterface):
             device.write(chorus32.Chorus32Encoder.encode_set_channel(local_idx, channel))
 
             node.is_configured = False
-
-    def set_threshold(self, device_idx, node_index, threshold):
-        """Set node threshold
-
-        Args:
-            device_idx: Device index
-            node_index: Local node index (0-5)
-            threshold: Threshold value (0-3000)
-        """
-        if 0 <= threshold <= 3000 and device_idx < len(self.devices):
-            device = self.devices[device_idx]
-            device.write(chorus32.Chorus32Encoder.encode_set_threshold(node_index, threshold))
-
-    def set_min_lap(self, device_idx, min_lap_ms):
-        """Set minimum lap time
-
-        Args:
-            device_idx: Device index
-            min_lap_ms: Minimum lap time in milliseconds
-        """
-        min_lap_sec = min_lap_ms // 1000
-        if 0 <= min_lap_sec <= 120 and device_idx < len(self.devices):
-            device = self.devices[device_idx]
-            # Use wildcard to set all nodes
-            device.write(chorus32.Chorus32Encoder.encode_set_min_lap_time('*', min_lap_sec))
 
     def set_rssi_interval(self, device_idx, interval_ms):
         """Set RSSI push interval
@@ -746,20 +700,6 @@ class Chorus32Provider:
             panel='provider_chorus32'
         )
 
-        # Min lap time field
-        self._rhapi.fields.register_function_binding(
-            field=UIField(
-                name=f'chorus32_min_lap_{dev_idx}',
-                label="Minimum Lap Time (seconds)",
-                field_type=UIFieldType.BASIC_INT,
-                desc="Minimum lap time in seconds (0-120)"
-            ),
-            getter_fn=self.get_min_lap,
-            setter_fn=self.set_min_lap,
-            args={'device': dev_idx},
-            panel=f'provider_chorus32_detail_{dev_idx}'
-        )
-
         # RSSI push interval field
         self._rhapi.fields.register_function_binding(
             field=UIField(
@@ -775,22 +715,9 @@ class Chorus32Provider:
             panel=f'provider_chorus32_detail_{dev_idx}'
         )
 
-        # Per-node threshold and active fields (6 nodes)
+        # Per-node active fields (6 nodes)
+        # Note: Thresholds are managed by RotorHazard's calibration system (enter_at/exit_at levels)
         for node_idx in range(6):
-            # Threshold field
-            self._rhapi.fields.register_function_binding(
-                field=UIField(
-                    name=f'chorus32_{dev_idx}_threshold_{node_idx}',
-                    label=f"Node {node_idx + 1} Threshold",
-                    field_type=UIFieldType.BASIC_INT,
-                    desc="Threshold value (0-3000, typical: 800)"
-                ),
-                getter_fn=self.get_threshold,
-                setter_fn=self.set_threshold,
-                args={'device': dev_idx, 'index': node_idx},
-                panel=f'provider_chorus32_detail_{dev_idx}'
-            )
-
             # Active checkbox
             self._rhapi.fields.register_function_binding(
                 field=UIField(
@@ -807,31 +734,9 @@ class Chorus32Provider:
 
     def register_combined_controls(self):
         """Register combined control fields"""
-        # Set all thresholds
-        self._rhapi.fields.register_function_binding(
-            field=UIField(
-                name='chorus32_combined_threshold',
-                label="Set All Thresholds",
-                field_type=UIFieldType.BASIC_INT,
-                desc="Set threshold for all nodes on all devices (0-3000)"
-            ),
-            getter_fn=self.get_combined_threshold,
-            setter_fn=self.set_combined_threshold,
-            panel='provider_chorus32'
-        )
-
-        # Set all min lap times
-        self._rhapi.fields.register_function_binding(
-            field=UIField(
-                name='chorus32_combined_min_lap',
-                label="Set All Min Lap Times",
-                field_type=UIFieldType.BASIC_INT,
-                desc="Set minimum lap time for all devices (seconds)"
-            ),
-            getter_fn=self.get_combined_min_lap,
-            setter_fn=self.set_combined_min_lap,
-            panel='provider_chorus32'
-        )
+        # No combined controls needed - thresholds managed by RotorHazard calibration
+        # Minimum lap time is a global RotorHazard setting
+        pass
 
     # Getter/setter functions for UI fields
     def get_device_address(self, args):
@@ -841,23 +746,6 @@ class Chorus32Provider:
         device_idx = args['device']
         self.devices[device_idx].addr = self._normalize_addr(value)
         self.save_addresses()
-
-    def get_threshold(self, args):
-        device = self.devices[args['device']]
-        node = device.nodes[args['index']]
-        return node.threshold
-
-    def set_threshold(self, value, args):
-        if self.interface:
-            self.interface.set_threshold(args['device'], args['index'], int(value))
-
-    def get_min_lap(self, args):
-        device = self.devices[args['device']]
-        return (device.min_lap_time // 1000) if device.min_lap_time else 0
-
-    def set_min_lap(self, value, args):
-        if self.interface:
-            self.interface.set_min_lap(args['device'], int(value) * 1000)
 
     def get_rssi_interval(self, args):
         device = self.devices[args['device']]
@@ -875,25 +763,6 @@ class Chorus32Provider:
     def set_node_active(self, value, args):
         if self.interface:
             self.interface.set_node_active(args['device'], args['index'], bool(value))
-
-    def get_combined_threshold(self, args):
-        return ""
-
-    def set_combined_threshold(self, value, args):
-        threshold = int(value)
-        if self.interface:
-            for dev_idx in range(len(self.devices)):
-                for node_idx in range(6):
-                    self.interface.set_threshold(dev_idx, node_idx, threshold)
-
-    def get_combined_min_lap(self, args):
-        return ""
-
-    def set_combined_min_lap(self, value, args):
-        min_lap_ms = int(value) * 1000
-        if self.interface:
-            for dev_idx in range(len(self.devices)):
-                self.interface.set_min_lap(dev_idx, min_lap_ms)
 
     # Event handlers
     def startup(self, args):
