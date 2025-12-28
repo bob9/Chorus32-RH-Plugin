@@ -15,6 +15,143 @@ A RotorHazard plugin that provides full integration with Chorus32 lap timing har
 - **Configuration Persistence**: All settings saved across restarts
 - **Simple ASCII Protocol**: Easy to debug with human-readable messages
 
+## How This Enhances Chorus32
+
+**For Chorus32 Developers:** This plugin integrates Chorus32 hardware into RotorHazard's comprehensive race management ecosystem while leveraging Chorus32's strengths.
+
+### Architecture Overview
+
+**Chorus32's Role:**
+- **RSSI Sensor Network**: Chorus32 devices act as distributed RSSI sensors
+- **Configurable Receivers**: Each RX5808 module can be tuned via ASCII commands
+- **Push-Based Updates**: Continuous RSSI streaming at configurable intervals (5-50ms)
+- **Simple Protocol**: The Chorus32 ASCII text protocol makes integration straightforward
+
+**RotorHazard's Role:**
+- **Race Management**: Heats, classes, pilots, event coordination
+- **Lap Detection**: Crossing detection from RSSI threshold analysis
+- **Per-Pilot Calibration**: Dynamic enter-at/exit-at levels per pilot
+- **Data Management**: Complete RSSI history, marshalling, exports, analytics
+- **Web Interface**: Real-time race display, announcer view, LED control
+
+### Division of Responsibilities
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        RotorHazard                          │
+│  • Race control & timing                                    │
+│  • Lap detection algorithm (from RSSI stream)               │
+│  • Per-pilot threshold calibration                          │
+│  • Data storage & marshalling                               │
+│  • Web UI, LED, announcer features                          │
+└────────────────────┬────────────────────────────────────────┘
+                     │ ASCII Protocol (WiFi/Serial)
+                     │ Commands: B/C/F, A, I, t
+                     │ Responses: r (RSSI stream), t (time)
+┌────────────────────┴────────────────────────────────────────┐
+│                        Chorus32                             │
+│  • RX5808 receiver control (band/channel)                   │
+│  • ADC sampling (RSSI from 6 receivers)                     │
+│  • Automatic RSSI push (every 5-50ms)                       │
+│  • Time synchronization                                     │
+│  • Per-node active/inactive control                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Protocol Usage
+
+This plugin uses a **minimal command set** from the Chorus32 protocol, focusing on sensor operation:
+
+**Commands Sent to Chorus32:**
+- `N` - Query receiver count (initialization only)
+- `B{n}` - Set receiver band (when pilot assigned)
+- `C{n}` - Set receiver channel (when pilot assigned)
+- `A{0/1}` - Enable/disable receiver node
+- `I{hex}` - Set RSSI push interval (connection setup)
+- `t` - Request time for synchronization
+
+**Responses Used:**
+- `r{hex}` - RSSI value (continuous stream, 100-200Hz typical)
+- `t{hex}` - Device time in milliseconds
+
+**Commands NOT Used:**
+- `T` (Threshold) - RotorHazard manages thresholds via calibration system
+- `M` (Min lap time) - RotorHazard global setting
+- `R` (Race mode) - Lap detection handled by RotorHazard
+- `L` (Lap detected) - Ignored, RH detects from RSSI stream
+
+### Why This Approach?
+
+**1. Leverages Chorus32's Strengths:**
+- Fast, lightweight RSSI sampling from ESP32
+- Proven RX5808 receiver modules
+- Flexible network connectivity (WiFi AP or client mode)
+- Simple, debuggable ASCII protocol
+
+**2. Adds Enterprise Race Features:**
+- **Database-backed race management** with complete history
+- **Advanced marshalling** - review every RSSI sample, not just peaks
+- **Per-pilot calibration** - each pilot can have different threshold settings
+- **Multi-device coordination** - up to 8 Chorus32 devices (48 nodes) synchronized
+- **Professional race display** - web-based real-time leaderboard
+- **Integration ecosystem** - LED control, announcer features, data exports
+
+**3. Simplifies Chorus32 Firmware:**
+- No complex lap detection logic needed in firmware
+- No race state management required
+- No database or web server needed
+- Focus on what ESP32 does best: fast ADC sampling and networking
+
+### Benefits to Chorus32 Ecosystem
+
+**For Users:**
+- **Lower cost scaling** - $30 Chorus32 devices vs $300+ commercial timers
+- **Professional features** - enterprise race management with affordable hardware
+- **Proven software** - RotorHazard is the most popular open-source race timing system
+- **Community support** - large RotorHazard user base and active development
+
+**For Developers:**
+- **Firmware simplification** - delegate complex features to RotorHazard
+- **Protocol validation** - real-world usage of your ASCII protocol
+- **Feature expansion** - new capabilities without firmware changes
+- **Ecosystem growth** - more users → more contributors → better hardware/firmware
+
+**For the Community:**
+- **Open source end-to-end** - both Chorus32 and RotorHazard are GPL-licensed
+- **Interoperability** - your protocol enables third-party integrations
+- **Knowledge sharing** - techniques developed here benefit both projects
+- **Cost accessibility** - competitive racing without expensive proprietary hardware
+
+### Technical Highlights
+
+**Why RSSI Streaming Works:**
+- ESP32 can sample all 6 ADCs and push updates every 5ms with minimal CPU load
+- Network bandwidth is negligible: 6 nodes × 200Hz × 8 bytes = 9.6 KB/s
+- RotorHazard's Python-based detection handles complex algorithms (LPF, hysteresis, auto-calibration)
+- Full RSSI history enables post-race analysis impossible with on-device lap detection
+
+**Why Automatic Frequency Configuration Matters:**
+- Eliminates manual receiver tuning (major pain point in races)
+- Supports dynamic heat changes (pilots can swap frequencies mid-event)
+- Enables advanced features (split classes, practice mode auto-switching)
+- Chorus32's band/channel commands make this possible with simple ASCII messages
+
+### Development Considerations
+
+**If you're a Chorus32 firmware developer:**
+
+This integration demonstrates the value of the Chorus32 protocol's flexibility. Consider:
+
+1. **RSSI timing accuracy** - Current millisecond timestamps are sufficient, but adding microsecond precision would enable even better analysis
+2. **Protocol extensions** - The ASCII format makes adding new commands easy while maintaining backward compatibility
+3. **Performance optimization** - Current RSSI push implementation handles 5ms intervals well; could potentially go faster
+4. **Additional sensors** - Temperature, voltage monitoring already in the Chorus32 protocol - RotorHazard could display these
+
+**The plugin is designed to be:**
+- **Non-invasive** - doesn't require firmware changes
+- **Forward compatible** - will work with protocol enhancements
+- **Feedback channel** - real-world usage informs firmware priorities
+
 ## Hardware Requirements
 
 - One or more Chorus32 timing devices
