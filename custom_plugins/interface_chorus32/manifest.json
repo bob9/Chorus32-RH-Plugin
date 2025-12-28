@@ -1,0 +1,12 @@
+{
+    "domain": "interface_chorus32",
+    "name": "Chorus32 Interface",
+    "author": "Chorus32 Community",
+    "author_uri": "https://github.com/bob9/Chorus32-RH-Plugin",
+    "description": "Control and data connection to Chorus32 lap timing system (6-way). Supports multiple devices, RSSI monitoring for marshalling, and per-node enable/disable.",
+    "documentation_uri": "https://github.com/bob9/Chorus32-RH-Plugin",
+    "license": "GPL-3.0",
+    "license_uri": "https://www.gnu.org/licenses/gpl-3.0.html",
+    "version": "1.0.0",
+    "required_rhapi_version": "1.4"
+}
